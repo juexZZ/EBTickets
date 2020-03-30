@@ -22,7 +22,7 @@ parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
 parser.add_argument("-e","--episode",type = int, default= 1000000)
 parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
-parser.add_argument("-g","--gpu",type=int, default=0)
+parser.add_argument("-g","--gpu",type=int, default=-1)
 parser.add_argument("-u","--hidden_unit",type=int,default=10)
 args = parser.parse_args()
 
@@ -37,7 +37,10 @@ BATCH_NUM_PER_CLASS = args.batch_num_per_class
 EPISODE = args.episode
 TEST_EPISODE = args.test_episode
 LEARNING_RATE = args.learning_rate
-GPU = args.gpu
+if args.gpu == -1:
+    DEVICE = torch.device('cpu')
+else:
+    DEVICE = torch.device('cuda:'+str(args.gpu))
 HIDDEN_UNIT = args.hidden_unit
 
 # modules
@@ -99,10 +102,15 @@ def main():
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
     relation_network.apply(weights_init)
 
-    relation_network.cuda(GPU)
+    #relation_network.cuda(GPU)
+    relation_network = relation_network.to(DEVICE)
 
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
+
+    print("Generat tasks")
+    metatrain_task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
+    metatest_task = tg.VoxFewshotTask(metatest_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,SAMPLE_NUM_PER_CLASS)
 
     if os.path.exists(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
         relation_network.load_state_dict(torch.load(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
@@ -120,9 +128,10 @@ def main():
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
         # batch_dataloader is to batch samples for training
-        task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
-        sample_dataloader = tg.get_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-        batch_dataloader = tg.get_data_loader(task,num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
+        #task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
+        metatrain_task.sample_episode()
+        sample_dataloader = tg.get_data_loader(metatrain_task, num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+        batch_dataloader = tg.get_data_loader(metatrain_task, num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
 
 
         # sample datas
@@ -130,8 +139,10 @@ def main():
         batches,batch_labels = batch_dataloader.__iter__().next()
 
         # move to GPU
-        samples = samples.cuda(GPU)
-        batches = batches.cuda(GPU)
+        #samples = samples.cuda(GPU)
+        #batches = batches.cuda(GPU)
+        samples = samples.to(DEVICE)
+        batches = batches.to(DEVICE)
 
         # calculate relations
         # each batch sample link to every samples to calculate relations
@@ -140,8 +151,8 @@ def main():
         # calculate loss
         mse = nn.MSELoss()
         one_hot_labels = torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)
-        mse = mse.cuda(GPU)
-        one_hot_labels = one_hot_labels.cuda(GPU)
+        mse = mse.to(DEVICE)
+        one_hot_labels = one_hot_labels.to(DEVICE)
         loss = mse(relations,one_hot_labels)
 
 
@@ -165,16 +176,16 @@ def main():
 
             for i in range(TEST_EPISODE):
                 
-                task = tg.VoxFewshotTask(metatest_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,SAMPLE_NUM_PER_CLASS)
-                sample_dataloader = tg.get_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-                test_dataloader = tg.get_data_loader(task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
+                metatest_task.sample_episode()
+                sample_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+                test_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
 
                 samples,sample_labels = sample_dataloader.__iter__().next()
                 tests,test_labels = test_dataloader.__iter__().next()
 
                 # move to GPU
-                samples = samples.cuda(GPU)
-                tests = tests.cuda(GPU)
+                samples = samples.to(DEVICE)
+                tests = tests.to(DEVICE)
                 # calculate relations
                 # each batch sample link to every samples to calculate relations
                 relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)

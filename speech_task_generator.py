@@ -27,28 +27,29 @@ class VoxFewshotTask(object):
         self.num_classes = num_classes
         self.train_num = train_num
         self.test_num = test_num
+        self.files2vec = dict()
+        for f in self.speaker_files:
+            with open(f, 'r') as vecs:
+                 temp = [line.split()[2:-1] for line in vecs]
+            self.files2vec[f] = random.sample(temp, len(temp))
 
+    def sample_episode(self):
         # sample classes (persons)
         class_files = random.sample(self.speaker_files,self.num_classes)
         labels = np.array(range(len(class_files)))# assign labels to sampled classes
         labels = dict(zip(class_files, labels))
         #print(labels)
-        samples = dict()
 
         self.train_vecs = []
         self.test_vecs = []
         self.train_labels = []
         self.test_labels = []
         for f in class_files:
-            # trace down to the audio files
-            with open(f, 'r') as vecs:
-                 temp = [line.split()[2:-1] for line in vecs]
-            samples[f] = random.sample(temp, len(temp)) # shuffle all the vecs(still txt)
             #print(f, labels[f])
-            self.train_vecs += samples[f][:train_num]
-            self.test_vecs += samples[f][train_num:train_num+test_num]
-            self.train_labels += [labels[f]]*train_num
-            self.test_labels += [labels[f]]*test_num
+            self.train_vecs += self.files2vec[f][:self.train_num]
+            self.test_vecs += self.files2vec[f][self.train_num: self.train_num+self.test_num]
+            self.train_labels += [labels[f]]*self.train_num
+            self.test_labels += [labels[f]]*self.test_num
             #print(self.train_labels)
             #print(self.test_labels)
 
