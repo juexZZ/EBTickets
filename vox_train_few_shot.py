@@ -186,6 +186,8 @@ def main():
                 # move to GPU
                 samples = samples.to(DEVICE)
                 tests = tests.to(DEVICE)
+                sample_labels = sample_labels.to(DEVICE)
+                test_labels = test_labels.to(DEVICE)
                 # calculate relations
                 # each batch sample link to every samples to calculate relations
                 relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
