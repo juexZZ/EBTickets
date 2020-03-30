@@ -99,6 +99,8 @@ def main():
     relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
     relation_network.apply(weights_init)
 
+    relation_network.cuda(GPU)
+
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
@@ -113,7 +115,7 @@ def main():
 
     for episode in range(EPISODE):
 
-        relation_network_scheduler.step(episode)
+        # relation_network_scheduler.step(episode)
 
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
@@ -128,6 +130,8 @@ def main():
         batches,batch_labels = batch_dataloader.__iter__().next()
 
         # move to GPU
+        samples = samples.cuda(GPU)
+        batches = batches.cuda(GPU)
 
         # calculate relations
         # each batch sample link to every samples to calculate relations
@@ -136,6 +140,8 @@ def main():
         # calculate loss
         mse = nn.MSELoss()
         one_hot_labels = torch.zeros(BATCH_NUM_PER_CLASS*CLASS_NUM, CLASS_NUM).scatter_(1, batch_labels.view(-1,1), 1)
+        mse = mse.cuda(GPU)
+        one_hot_labels = one_hot_labels.cuda(GPU)
         loss = mse(relations,one_hot_labels)
 
 
@@ -149,7 +155,7 @@ def main():
         relation_network_optim.step()
 
         if (episode+1)%100 == 0:
-                print("episode:",episode+1,"loss",loss.data[0])
+                print("episode:",episode+1,"loss",loss.item())
 
         if (episode+1)%5000 == 0:
 
@@ -167,7 +173,8 @@ def main():
                 tests,test_labels = test_dataloader.__iter__().next()
 
                 # move to GPU
-
+                samples = samples.cuda(GPU)
+                tests = tests.cuda(GPU)
                 # calculate relations
                 # each batch sample link to every samples to calculate relations
                 relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
@@ -190,6 +197,8 @@ def main():
                 print("save networks for episode:",episode)
 
                 last_accuracy = test_accuracy
+
+        relation_network_scheduler.step(episode)
 
 
 
