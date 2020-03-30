@@ -23,7 +23,9 @@ parser.add_argument("-e","--episode",type = int, default= 1000000)
 parser.add_argument("-t","--test_episode", type = int, default = 1000)
 parser.add_argument("-l","--learning_rate", type = float, default = 0.001)
 parser.add_argument("-g","--gpu",type=int, default=-1)
-parser.add_argument("-u","--hidden_unit",type=int,default=10)
+parser.add_argument("--hidden_size",type=int,default=256)
+parser.add_argument("--fresh", type=bool, default=False)
+parser.add_argument("--test_step", type=int, default=1000)
 args = parser.parse_args()
 
 # Hyper Parameters
@@ -41,39 +43,44 @@ if args.gpu == -1:
     DEVICE = torch.device('cpu')
 else:
     DEVICE = torch.device('cuda:'+str(args.gpu))
-HIDDEN_UNIT = args.hidden_unit
+HIDDEN_DIM = args.hidden_size
 
 # modules
 # Relation modules for speech
 class RelationNetwork(nn.Module):
     """Relation Network"""
-    def __init__(self, input_size, hidden_size):
+    def __init__(self, input_size, hidden_size, relation_dim):
         super(RelationNetwork, self).__init__()
         self.input_size = input_size # vector feature dim
-        self.fc1 = nn.Linear(input_size*2, hidden_size)
-        self.fc2 = nn.Linear(hidden_size, 1)
+        self.hidden_size = hidden_size
+        self.fc1 = nn.Linear(input_size, hidden_size)
+        self.fc2 = nn.Linear(hidden_size*2, relation_dim)
+        self.fc3 = nn.Linear(relation_dim, 1)
 
     def forward(self, sample, query, num_class):
         """
         sample: (sample_per_class x num_class) x vec_dim
         query: (batch_per_class x num_class) x vec_dim
         """
-        sample = sample.view(num_class, -1, self.input_size)
+        sample = F.relu(self.fc1(sample))
+        query = F.relu(self.fc1(query))
+
+        sample = sample.view(num_class, -1, self.hidden_size)
         sample_num_per_class = sample.size(1)
         sample = torch.sum(sample, 1).squeeze(1) # sum within each class -> num_class x vec_dim
 
-        query = query.view(num_class, -1, self.input_size)
+        query = query.view(num_class, -1, self.hidden_size)
         batch_num_per_class = query.size(1)
         # align
         sample_ext = sample.unsqueeze(0).repeat(batch_num_per_class*num_class, 1, 1) # (batch_per_class x num_class) x num_class x vec_dim
-        query = query.view(-1, self.input_size)
+        query = query.view(-1, self.hidden_size)
         query_ext = query.unsqueeze(0).repeat(num_class, 1, 1) # num_classes x (batch_per_class x num_class) x vec_dim
         query_ext = torch.transpose(query_ext, 0, 1) # (batch_per_class x num_class) x num_class x vec_dim
         # concat
-        relation_pairs = torch.cat((sample_ext, query_ext), 2).view(-1, self.input_size*2)
+        relation_pairs = torch.cat((sample_ext, query_ext), 2).view(-1, self.hidden_size*2)
         # calculate relations
-        out = F.relu(self.fc1(relation_pairs))
-        out = torch.sigmoid(self.fc2(out))
+        out = F.relu(self.fc2(relation_pairs))
+        out = torch.sigmoid(self.fc3(out))
         out = out.view(-1, num_class)
         return out
 
@@ -99,7 +106,7 @@ def main():
 
     # Step2: init neural networks:
     print("init neural networks")
-    relation_network = RelationNetwork(FEATURE_DIM,RELATION_DIM)
+    relation_network = RelationNetwork(FEATURE_DIM, HIDDEN_DIM, RELATION_DIM)
     relation_network.apply(weights_init)
 
     #relation_network.cuda(GPU)
@@ -108,13 +115,14 @@ def main():
     relation_network_optim = torch.optim.Adam(relation_network.parameters(),lr=LEARNING_RATE)
     relation_network_scheduler = StepLR(relation_network_optim,step_size=100000,gamma=0.5)
 
-    print("Generat tasks")
+    print("Generate tasks")
     metatrain_task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
     metatest_task = tg.VoxFewshotTask(metatest_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,SAMPLE_NUM_PER_CLASS)
 
-    if os.path.exists(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
-        relation_network.load_state_dict(torch.load(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
-        print("load relation network success")
+    if not args.fresh:
+        if os.path.exists(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")):
+            relation_network.load_state_dict(torch.load(str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl")))
+            print("load relation network success")
 
     # Step3: training
     print("Training...")
@@ -168,7 +176,7 @@ def main():
         if (episode+1)%100 == 0:
                 print("episode:",episode+1,"loss",loss.item())
 
-        if (episode+1)%5000 == 0:
+        if (episode+1)%args.test_step == 0:
 
             # test
             print("Testing...")
@@ -210,6 +218,7 @@ def main():
                 print("save networks for episode:",episode)
 
                 last_accuracy = test_accuracy
+            print("best accuracy so far:", last_accuracy)
 
         relation_network_scheduler.step(episode)
 
