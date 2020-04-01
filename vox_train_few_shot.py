@@ -15,7 +15,7 @@ parser = argparse.ArgumentParser(description="Few Shot Speech Classification -> 
 parser.add_argument("-dir", default = "../vecs/")
 parser.add_argument("--train_cls", type=int, default=30)# how many persons will be in the training part
 parser.add_argument("-f","--feature_dim",type = int, default = 512)
-parser.add_argument("-r","--relation_dim",type = int, default = 8)
+parser.add_argument("-r","--relation_dim",type = int, default = 1024)
 parser.add_argument("-w","--class_num",type = int, default = 5)
 parser.add_argument("-s","--sample_num_per_class",type = int, default = 5)
 parser.add_argument("-b","--batch_num_per_class",type = int, default = 15)
@@ -148,7 +148,7 @@ def main():
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
         # batch_dataloader is to batch samples for training
-        task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
+        
         metatrain_task.sample_episode()
         sample_dataloader = tg.get_data_loader(metatrain_task, num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
         batch_dataloader = tg.get_data_loader(metatrain_task, num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
@@ -194,50 +194,50 @@ def main():
             relation_network.eval()
             total_rewards = 0
             ###### sanitary
-            relations = relation_network(sample=samples, query=batches, num_class=CLASS_NUM)
-            _,predict_labels = torch.max(relations.data,1)
-            rewards = [1 if predict_labels[j]==batch_labels[j] else 0 for j in range(CLASS_NUM*BATCH_NUM_PER_CLASS)]
-            total_rewards += np.sum(rewards)
-            test_accuracy = total_rewards/1.0/CLASS_NUM/BATCH_NUM_PER_CLASS
+            # relations = relation_network(sample=samples, query=batches, num_class=CLASS_NUM)
+            # _,predict_labels = torch.max(relations.data,1)
+            # rewards = [1 if predict_labels[j]==batch_labels[j] else 0 for j in range(CLASS_NUM*BATCH_NUM_PER_CLASS)]
+            # total_rewards += np.sum(rewards)
+            # test_accuracy = total_rewards/1.0/CLASS_NUM/BATCH_NUM_PER_CLASS
             #####
 
 
-            # for i in range(TEST_EPISODE):
+            for i in range(TEST_EPISODE):
                 
-            #     metatest_task.sample_episode()
-            #     sample_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-            #     test_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
+                metatest_task.sample_episode()
+                sample_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+                test_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
 
-            #     samples,sample_labels = sample_dataloader.__iter__().next()
-            #     tests,test_labels = test_dataloader.__iter__().next()
+                samples,sample_labels = sample_dataloader.__iter__().next()
+                tests,test_labels = test_dataloader.__iter__().next()
 
-            #     # move to GPU
-            #     samples = samples.to(DEVICE)
-            #     tests = tests.to(DEVICE)
-            #     sample_labels = sample_labels.to(DEVICE)
-            #     test_labels = test_labels.to(DEVICE)
-            #     # calculate relations
-            #     # each batch sample link to every samples to calculate relations
-            #     relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
+                # move to GPU
+                samples = samples.to(DEVICE)
+                tests = tests.to(DEVICE)
+                sample_labels = sample_labels.to(DEVICE)
+                test_labels = test_labels.to(DEVICE)
+                # calculate relations
+                # each batch sample link to every samples to calculate relations
+                relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
 
-            #     _,predict_labels = torch.max(relations.data,1)
+                _,predict_labels = torch.max(relations.data,1)
 
-            #     rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM*SAMPLE_NUM_PER_CLASS)]
+                rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM*SAMPLE_NUM_PER_CLASS)]
 
-            #     total_rewards += np.sum(rewards)
+                total_rewards += np.sum(rewards)
 
-            # test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
+            test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
 
             print("test accuracy:",test_accuracy)
 
-            # if test_accuracy > last_accuracy:
+            if test_accuracy > last_accuracy:
 
-            #     # save networks
-            #     torch.save(relation_network.state_dict(),str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+                # save networks
+                torch.save(relation_network.state_dict(),str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
-            #     print("save networks for episode:",episode)
+                print("save networks for episode:",episode)
 
-            #     last_accuracy = test_accuracy
+                last_accuracy = test_accuracy
             print("best accuracy so far:", last_accuracy)
             relation_network.train()
 
