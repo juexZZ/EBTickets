@@ -107,7 +107,7 @@ def main():
     # Step2: init neural networks:
     print("init neural networks")
     relation_network = RelationNetwork(FEATURE_DIM, HIDDEN_DIM, RELATION_DIM)
-    relation_network.apply(weights_init)
+    #relation_network.apply(weights_init)
 
     #relation_network.cuda(GPU)
     relation_network = relation_network.to(DEVICE)
@@ -126,8 +126,20 @@ def main():
 
     # Step3: training
     print("Training...")
+    relation_network.train()
 
     last_accuracy = 0.0
+
+    # samples = torch.rand(25, 512)
+    # batches = torch.rand(75, 512)
+    # sample_labels = torch.tensor([0, 0, 0, 0, 0, 1, 1, 1, 1, 1, 2, 2, 2, 2, 2, 3, 3, 3, 3, 3, 4, 4, 4, 4, 4])
+    # batch_labels = torch.randint(0,5,(75,))
+
+    # move to GPU
+    #samples = samples.cuda(GPU)
+    #batches = batches.cuda(GPU)
+    # samples = samples.to(DEVICE)
+    # batches = batches.to(DEVICE)
 
     for episode in range(EPISODE):
 
@@ -136,13 +148,13 @@ def main():
         # init dataset
         # sample_dataloader is to obtain previous samples for compare
         # batch_dataloader is to batch samples for training
-        #task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
+        task = tg.VoxFewshotTask(metatrain_speech_files,CLASS_NUM,SAMPLE_NUM_PER_CLASS,BATCH_NUM_PER_CLASS)
         metatrain_task.sample_episode()
         sample_dataloader = tg.get_data_loader(metatrain_task, num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
         batch_dataloader = tg.get_data_loader(metatrain_task, num_per_class=BATCH_NUM_PER_CLASS,split="test",shuffle=True)
 
 
-        # sample datas
+        # sample data
         samples,sample_labels = sample_dataloader.__iter__().next()
         batches,batch_labels = batch_dataloader.__iter__().next()
 
@@ -164,7 +176,6 @@ def main():
         loss = mse(relations,one_hot_labels)
 
 
-        # training
         relation_network.zero_grad()
 
         loss.backward()
@@ -180,45 +191,55 @@ def main():
 
             # test
             print("Testing...")
+            relation_network.eval()
             total_rewards = 0
+            ###### sanitary
+            relations = relation_network(sample=samples, query=batches, num_class=CLASS_NUM)
+            _,predict_labels = torch.max(relations.data,1)
+            rewards = [1 if predict_labels[j]==batch_labels[j] else 0 for j in range(CLASS_NUM*BATCH_NUM_PER_CLASS)]
+            total_rewards += np.sum(rewards)
+            test_accuracy = total_rewards/1.0/CLASS_NUM/BATCH_NUM_PER_CLASS
+            #####
 
-            for i in range(TEST_EPISODE):
+
+            # for i in range(TEST_EPISODE):
                 
-                metatest_task.sample_episode()
-                sample_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
-                test_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
+            #     metatest_task.sample_episode()
+            #     sample_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="train",shuffle=False)
+            #     test_dataloader = tg.get_data_loader(metatest_task,num_per_class=SAMPLE_NUM_PER_CLASS,split="test",shuffle=True)
 
-                samples,sample_labels = sample_dataloader.__iter__().next()
-                tests,test_labels = test_dataloader.__iter__().next()
+            #     samples,sample_labels = sample_dataloader.__iter__().next()
+            #     tests,test_labels = test_dataloader.__iter__().next()
 
-                # move to GPU
-                samples = samples.to(DEVICE)
-                tests = tests.to(DEVICE)
-                sample_labels = sample_labels.to(DEVICE)
-                test_labels = test_labels.to(DEVICE)
-                # calculate relations
-                # each batch sample link to every samples to calculate relations
-                relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
+            #     # move to GPU
+            #     samples = samples.to(DEVICE)
+            #     tests = tests.to(DEVICE)
+            #     sample_labels = sample_labels.to(DEVICE)
+            #     test_labels = test_labels.to(DEVICE)
+            #     # calculate relations
+            #     # each batch sample link to every samples to calculate relations
+            #     relations = relation_network(sample=samples, query=tests, num_class=CLASS_NUM)
 
-                _,predict_labels = torch.max(relations.data,1)
+            #     _,predict_labels = torch.max(relations.data,1)
 
-                rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM*SAMPLE_NUM_PER_CLASS)]
+            #     rewards = [1 if predict_labels[j]==test_labels[j] else 0 for j in range(CLASS_NUM*SAMPLE_NUM_PER_CLASS)]
 
-                total_rewards += np.sum(rewards)
+            #     total_rewards += np.sum(rewards)
 
-            test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
+            # test_accuracy = total_rewards/1.0/CLASS_NUM/SAMPLE_NUM_PER_CLASS/TEST_EPISODE
 
             print("test accuracy:",test_accuracy)
 
-            if test_accuracy > last_accuracy:
+            # if test_accuracy > last_accuracy:
 
-                # save networks
-                torch.save(relation_network.state_dict(),str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
+            #     # save networks
+            #     torch.save(relation_network.state_dict(),str("./models/vox_relation_network_"+ str(CLASS_NUM) +"way_" + str(SAMPLE_NUM_PER_CLASS) +"shot.pkl"))
 
-                print("save networks for episode:",episode)
+            #     print("save networks for episode:",episode)
 
-                last_accuracy = test_accuracy
+            #     last_accuracy = test_accuracy
             print("best accuracy so far:", last_accuracy)
+            relation_network.train()
 
         relation_network_scheduler.step(episode)
 
