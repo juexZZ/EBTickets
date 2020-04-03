@@ -46,8 +46,11 @@ class VoxFewshotTask(object):
         self.test_labels = []
         for f in class_files:
             #print(f, labels[f])
-            self.train_vecs += self.files2vec[f][:self.train_num]
-            self.test_vecs += self.files2vec[f][self.train_num:self.train_num+self.test_num]
+            #self.train_vecs += self.files2vec[f][:self.train_num]
+            #self.test_vecs += self.files2vec[f][self.train_num:self.train_num+self.test_num]
+            sampled_vecs = random.sample(self.files2vec[f], self.train_num+self.test_num)
+            self.train_vecs += sampled_vecs[: self.train_num]
+            self.test_vecs += sampled_vecs[self.train_num : self.train_num+self.test_num]
             self.train_labels += [labels[f]]*self.train_num
             self.test_labels += [labels[f]]*self.test_num
             #print(self.train_labels)
